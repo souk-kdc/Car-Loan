@@ -116,9 +116,18 @@ export function saveStores(stores: Store[]): void {
 }
 
 export function getSelectedContractId(): string | null {
-  return localStorage.getItem(STORAGE_KEY_SELECTED_ID);
+  try {
+    return localStorage.getItem(STORAGE_KEY_SELECTED_ID);
+  } catch (e) {
+    return null;
+  }
 }
 
 export function setSelectedContractId(id: string): void {
-  localStorage.setItem(STORAGE_KEY_SELECTED_ID, id);
+  try {
+    localStorage.setItem(STORAGE_KEY_SELECTED_ID, id);
+  } catch (e) {
+    console.warn('Failed to set selected contract id:', e);
+  }
 }
+

@@ -5,21 +5,35 @@ import {
   GoogleAuthProvider, 
   onAuthStateChanged, 
   signOut, 
-  User 
+  User,
+  Auth
 } from 'firebase/auth';
-import firebaseConfig from '../../firebase-applet-config.json';
+import rawFirebaseConfig from '../../firebase-applet-config.json';
 
-// Initialize Firebase App instance once
-const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
-export const auth = getAuth(app);
+const firebaseConfig = rawFirebaseConfig || {};
 
-// Configure Google Provider with requested Workspace Scopes
-const provider = new GoogleAuthProvider();
-provider.addScope('https://www.googleapis.com/auth/spreadsheets');
-provider.addScope('https://www.googleapis.com/auth/drive.file');
-provider.setCustomParameters({
-  prompt: 'consent',
-});
+// Initialize Firebase App instance safely
+let app: any = null;
+let authInstance: Auth | null = null;
+let provider: GoogleAuthProvider | null = null;
+
+try {
+  if (firebaseConfig && (firebaseConfig as any).apiKey) {
+    app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+    authInstance = getAuth(app);
+    provider = new GoogleAuthProvider();
+    provider.addScope('https://www.googleapis.com/auth/spreadsheets');
+    provider.addScope('https://www.googleapis.com/auth/drive.file');
+    provider.setCustomParameters({
+      prompt: 'consent',
+    });
+  }
+} catch (e) {
+  console.warn('Firebase Auth initialization notice:', e);
+}
+
+export const auth = authInstance;
+
 
 // Flag to track ongoing sign in flow
 let isSigningIn = false;
@@ -33,28 +47,42 @@ export const initAuth = (
   onAuthSuccess?: (user: User, token: string) => void,
   onAuthFailure?: () => void
 ) => {
-  return onAuthStateChanged(auth, async (user: User | null) => {
-    if (user) {
-      if (cachedAccessToken) {
-        if (onAuthSuccess) onAuthSuccess(user, cachedAccessToken);
-      } else if (!isSigningIn) {
-        // Cached token might have been cleared on reload
+  if (!authInstance) {
+    if (onAuthFailure) onAuthFailure();
+    return () => {};
+  }
+
+  try {
+    return onAuthStateChanged(authInstance, async (user: User | null) => {
+      if (user) {
+        if (cachedAccessToken) {
+          if (onAuthSuccess) onAuthSuccess(user, cachedAccessToken);
+        } else if (!isSigningIn) {
+          if (onAuthFailure) onAuthFailure();
+        }
+      } else {
+        cachedAccessToken = null;
         if (onAuthFailure) onAuthFailure();
       }
-    } else {
-      cachedAccessToken = null;
-      if (onAuthFailure) onAuthFailure();
-    }
-  });
+    });
+  } catch (e) {
+    console.warn('onAuthStateChanged error:', e);
+    if (onAuthFailure) onAuthFailure();
+    return () => {};
+  }
 };
 
 /**
  * Sign in with Google Popup
  */
 export const signInWithGoogle = async (): Promise<{ user: User; accessToken: string } | null> => {
+  if (!authInstance || !provider) {
+    throw new Error('Firebase Auth is not configured for this domain. You can still use the app locally with export/import and direct calculation features.');
+  }
+
   try {
     isSigningIn = true;
-    const result = await signInWithPopup(auth, provider);
+    const result = await signInWithPopup(authInstance, provider);
     const credential = GoogleAuthProvider.credentialFromResult(result);
     
     if (!credential?.accessToken) {
@@ -89,6 +117,13 @@ export const setCachedToken = (token: string | null) => {
  * Sign out and clear cached token
  */
 export const logOutGoogle = async () => {
-  await signOut(auth);
+  if (authInstance) {
+    try {
+      await signOut(authInstance);
+    } catch (e) {
+      console.warn('Sign out warning:', e);
+    }
+  }
   cachedAccessToken = null;
 };
+
