@@ -1,0 +1,6 @@
+{
+  "name": "Auto Loan Tracker - ລະບົບຕິດຕາມການຜ່ອນລົດ",
+  "description": "ລະບົບຕິດຕາມການຜ່ອນລົດ, ຄິດໄລ່ດອກເບ້ຍສະສົມ, ແຈ້ງເຕືອນກຳນົດຊຳລະ, ຈັດການຂໍ້ມູນຫຼາຍໂຊຣູມ/ຮ້ານຄ້າ ແລະ ເຊື່ອມຕໍ່ Google Sheets",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
