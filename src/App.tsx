@@ -27,6 +27,7 @@ import { RecordPaymentModal } from './components/RecordPaymentModal';
 import { GoogleSheetsSyncModal } from './components/GoogleSheetsSyncModal';
 import { StoreManagerModal } from './components/StoreManagerModal';
 import { SlipViewerModal } from './components/SlipViewerModal';
+import { AuthHelpModal } from './components/AuthHelpModal';
 
 import { LoanContract, Store, InstallmentItem, VehicleType, Currency } from './types';
 import { 
@@ -49,7 +50,8 @@ import {
   initAuth, 
   signInWithGoogle, 
   logOutGoogle, 
-  getAccessToken 
+  getAccessToken,
+  formatAuthError
 } from './services/firebaseAuth';
 import { 
   exportContractToGoogleSheets, 
@@ -79,6 +81,11 @@ export default function App() {
   const [recordingPaymentItem, setRecordingPaymentItem] = useState<InstallmentItem | null>(null);
   const [viewingSlipItem, setViewingSlipItem] = useState<InstallmentItem | null>(null);
   const [deleteConfirmContract, setDeleteConfirmContract] = useState<LoanContract | null>(null);
+
+  // Auth error & Domain help modal state
+  const [isAuthHelpModalOpen, setIsAuthHelpModalOpen] = useState(false);
+  const [authErrorCode, setAuthErrorCode] = useState('');
+  const [authErrorMessage, setAuthErrorMessage] = useState('');
 
   // Toast notification state
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
@@ -145,11 +152,16 @@ export default function App() {
         );
       }
     } catch (err: any) {
-      console.error(err);
-      showToast(
-        activeLanguage === 'lo' ? 'ການເຂົ້າສູ່ລະບົບບໍ່ສຳເລັດ ກະລຸນາລອງໃໝ່' : 'Sign in failed. Please try again.',
-        'error'
-      );
+      console.error('Sign in failure:', err);
+      const { message, isDomainError, code } = formatAuthError(err, activeLanguage);
+      setAuthErrorCode(code);
+      setAuthErrorMessage(message);
+
+      if (isDomainError) {
+        setIsAuthHelpModalOpen(true);
+      } else {
+        showToast(message, 'error');
+      }
     } finally {
       setIsLoggingIn(false);
     }
@@ -607,8 +619,17 @@ export default function App() {
         user={user}
         onSignIn={handleSignIn}
         onSync={handleSyncToSheets}
+        onOpenAuthHelp={() => setIsAuthHelpModalOpen(true)}
         isSyncing={isSyncingSheets}
         syncSuccessUrl={syncSuccessUrl}
+        activeLanguage={activeLanguage}
+      />
+
+      <AuthHelpModal
+        isOpen={isAuthHelpModalOpen}
+        onClose={() => setIsAuthHelpModalOpen(false)}
+        errorCode={authErrorCode}
+        errorMessage={authErrorMessage}
         activeLanguage={activeLanguage}
       />
 

@@ -246,6 +246,146 @@ export async function syncScheduleToGoogleSheet(
 }
 
 /**
+  * Syncs contract data directly to an Apps Script Web App endpoint (no OAuth required)
+  */
+export async function syncToAppsScriptWebhook(webhookUrl: string, contract: LoanContract): Promise<{ success: boolean; message?: string; url?: string }> {
+  try {
+    const payload = {
+      action: 'sync_contract',
+      contract,
+      timestamp: new Date().toISOString(),
+    };
+
+    const response = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'text/plain;charset=utf-8',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Server returned status ${response.status}`);
+    }
+
+    const data = await response.json();
+    return {
+      success: true,
+      url: data.spreadsheetUrl || data.url,
+      message: data.message || 'Synced successfully',
+    };
+  } catch (err: any) {
+    console.error('Apps Script Webhook sync error:', err);
+    throw new Error(err.message || 'Failed to sync with Apps Script Web App');
+  }
+}
+
+/**
+  * Copies Amortization schedule as TSV to clipboard (Direct paste into Google Sheets / Excel)
+  */
+export function copyScheduleToClipboard(contract: LoanContract): boolean {
+  try {
+    const headers = [
+      'ງວດທີ',
+      'ວັນທີຄົບກຳນົດ',
+      'ຄ່າງວດ',
+      'ເງິນຕົ້ນ',
+      'ດອກເບ້ຍ',
+      'ດອກເບ້ຍສະສົມ',
+      'ຍອດຕົ້ນຍັງເຫຼືອ',
+      'ສະຖານະ',
+      'ວັນທີຈ່າຍຈິງ',
+      'ຈຳນວນເງິນທີ່ຈ່າຍ',
+      'ຊ່ອງທາງຈ່າຍ',
+      'ໝາຍເຫດ',
+    ].join('\t');
+
+    const rows = contract.schedule.map((item) => {
+      let statusText = 'Pending';
+      if (item.status === 'paid') statusText = 'Paid';
+      else if (item.status === 'overdue') statusText = 'Overdue';
+      else if (item.status === 'due_soon') statusText = 'Due Soon';
+
+      return [
+        item.period,
+        item.dueDate,
+        item.installmentAmount,
+        item.principalAmount,
+        item.interestAmount,
+        item.cumulativeInterest,
+        item.remainingBalance,
+        statusText,
+        item.paidDate || '',
+        item.paidAmount || (item.status === 'paid' ? item.installmentAmount : ''),
+        item.paymentMethod || '',
+        item.receiptNote || '',
+      ].join('\t');
+    });
+
+    const fullContent = [
+      `ຕາຕະລາງຜ່ອນລົດ: ${contract.carName} (${contract.storeName})`,
+      `ລາຄາລວມ: ${contract.totalPrice} ${contract.currency}\tວາງດາວ: ${contract.downPaymentPercent}%\tດອກເບ້ຍ/ເດືອນ: ${(contract.monthlyInterestRate * 100).toFixed(2)}%\tກຳນົດຜ່ອນ: ${contract.termMonths} ເດືອນ`,
+      '',
+      headers,
+      ...rows,
+    ].join('\n');
+
+    navigator.clipboard.writeText(fullContent);
+    return true;
+  } catch (e) {
+    console.error('Clipboard copy error:', e);
+    return false;
+  }
+}
+
+/**
+ * Downloads Amortization schedule as CSV file
+ */
+export function downloadScheduleAsCsv(contract: LoanContract): void {
+  const headers = [
+    'Period',
+    'Due Date',
+    'Installment',
+    'Principal',
+    'Interest',
+    'Cumulative Interest',
+    'Remaining Balance',
+    'Status',
+    'Paid Date',
+    'Paid Amount',
+    'Payment Method',
+    'Notes',
+  ].join(',');
+
+  const rows = contract.schedule.map((item) => {
+    return [
+      item.period,
+      `"${item.dueDate}"`,
+      item.installmentAmount,
+      item.principalAmount,
+      item.interestAmount,
+      item.cumulativeInterest,
+      item.remainingBalance,
+      `"${item.status}"`,
+      `"${item.paidDate || ''}"`,
+      item.paidAmount || '',
+      `"${item.paymentMethod || ''}"`,
+      `"${(item.receiptNote || '').replace(/"/g, '""')}"`,
+    ].join(',');
+  });
+
+  const csvContent = '\uFEFF' + [headers, ...rows].join('\n');
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.setAttribute('href', url);
+  link.setAttribute('download', `car_loan_${contract.carName.replace(/\s+/g, '_')}_schedule.csv`);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+
+/**
  * Generates copy-paste ready Google Apps Script code for reminders & webhooks
  */
 export function generateAppsScriptTemplate(spreadsheetId: string, contractCarName: string, storeName: string): string {
@@ -328,6 +468,45 @@ function sendLineNotify(message) {
     payload: { "message": message }
   };
   UrlFetchApp.fetch(url, options);
+}
+
+/**
+ * Web App Webhook (ອະນຸຍາດໃຫ້ເວັບໄຊຊິ້ງຂໍ້ມູນລົງ Sheet ໄດ້ໂດຍກົງ ບໍ່ຕ້ອງຜ່ານ Login)
+ * ວິທີເປີດໃຊ້: ກົດ Deploy > New deployment > Select type: Web app > Who has access: Anyone
+ */
+function doPost(e) {
+  try {
+    const postData = JSON.parse(e.postData.contents);
+    const contract = postData.contract;
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    let sheet = ss.getSheetByName("ສະຫຼຸບ ແລະ ຕາຕະລາງຄ່າງວດ");
+    
+    if (sheet && contract && contract.schedule) {
+      // ອັບເດດສະຖານະ ແລະ ປະຫວັດການຈ່າຍ
+      for (let i = 0; i < contract.schedule.length; i++) {
+        const item = contract.schedule[i];
+        const row = 15 + i;
+        let statusText = item.status === 'paid' ? 'ຈ່າຍແລ້ວ (Paid)' : (item.status === 'overdue' ? 'ກາຍກຳນົດ (Overdue)' : 'ລໍຖ້າຊຳລະ (Pending)');
+        
+        sheet.getRange(row, 8).setValue(statusText);
+        if (item.paidDate) sheet.getRange(row, 9).setValue(item.paidDate);
+        if (item.paidAmount) sheet.getRange(row, 10).setValue(item.paidAmount);
+        if (item.paymentMethod) sheet.getRange(row, 11).setValue(item.paymentMethod);
+        if (item.receiptNote) sheet.getRange(row, 12).setValue(item.receiptNote);
+      }
+    }
+    
+    return ContentService.createTextOutput(JSON.stringify({
+      success: true,
+      message: "Sync completed successfully",
+      spreadsheetUrl: ss.getUrl()
+    })).setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    return ContentService.createTextOutput(JSON.stringify({
+      success: false,
+      error: err.toString()
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
 }
 `;
 }

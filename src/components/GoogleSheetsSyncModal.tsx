@@ -10,11 +10,20 @@ import {
   Sparkles, 
   ShieldCheck, 
   AlertCircle,
-  FileCheck
+  FileCheck,
+  Download,
+  ClipboardList,
+  HelpCircle,
+  Send
 } from 'lucide-react';
 import { User } from 'firebase/auth';
 import { LoanContract } from '../types';
-import { generateAppsScriptTemplate } from '../services/googleSheets';
+import { 
+  generateAppsScriptTemplate, 
+  copyScheduleToClipboard, 
+  downloadScheduleAsCsv, 
+  syncToAppsScriptWebhook 
+} from '../services/googleSheets';
 
 interface GoogleSheetsSyncModalProps {
   isOpen: boolean;
@@ -23,6 +32,7 @@ interface GoogleSheetsSyncModalProps {
   user: User | null;
   onSignIn: () => void;
   onSync: () => void;
+  onOpenAuthHelp?: () => void;
   isSyncing: boolean;
   syncSuccessUrl?: string;
   activeLanguage: 'lo' | 'en';
@@ -35,14 +45,19 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
   user,
   onSignIn,
   onSync,
+  onOpenAuthHelp,
   isSyncing,
   syncSuccessUrl,
   activeLanguage,
 }) => {
   if (!isOpen) return null;
 
-  const [activeTab, setActiveTab] = useState<'sync' | 'script'>('sync');
+  const [activeTab, setActiveTab] = useState<'sync' | 'script' | 'direct'>('sync');
   const [copiedScript, setCopiedScript] = useState(false);
+  const [copiedTable, setCopiedTable] = useState(false);
+  const [webhookUrl, setWebhookUrl] = useState('');
+  const [isWebhookSyncing, setIsWebhookSyncing] = useState(false);
+  const [webhookResult, setWebhookResult] = useState<{ success?: boolean; message?: string } | null>(null);
 
   const scriptCode = generateAppsScriptTemplate(
     contract.spreadsheetId || 'YOUR_SPREADSHEET_ID',
@@ -54,6 +69,32 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
     navigator.clipboard.writeText(scriptCode);
     setCopiedScript(true);
     setTimeout(() => setCopiedScript(false), 2500);
+  };
+
+  const handleCopyTable = () => {
+    const success = copyScheduleToClipboard(contract);
+    if (success) {
+      setCopiedTable(true);
+      setTimeout(() => setCopiedTable(false), 2500);
+    }
+  };
+
+  const handleDownloadCsv = () => {
+    downloadScheduleAsCsv(contract);
+  };
+
+  const handleWebhookSync = async () => {
+    if (!webhookUrl.trim()) return;
+    setIsWebhookSyncing(true);
+    setWebhookResult(null);
+    try {
+      const res = await syncToAppsScriptWebhook(webhookUrl.trim(), contract);
+      setWebhookResult({ success: true, message: res.message || 'Synced successfully!' });
+    } catch (e: any) {
+      setWebhookResult({ success: false, message: e.message || 'Sync failed' });
+    } finally {
+      setIsWebhookSyncing(false);
+    }
   };
 
   const spreadsheetLink = syncSuccessUrl || contract.spreadsheetUrl;
@@ -86,31 +127,44 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
         </div>
 
         {/* Tab navigation */}
-        <div className="flex border-b border-slate-200 bg-slate-50/50 px-6 pt-2">
+        <div className="flex border-b border-slate-200 bg-slate-50/50 px-6 pt-2 overflow-x-auto no-scrollbar">
           <button
             id="tab-sheets-sync"
             onClick={() => setActiveTab('sync')}
-            className={`px-4 py-2.5 text-xs sm:text-sm font-semibold border-b-2 transition-all flex items-center gap-2 cursor-pointer ${
+            className={`px-4 py-2.5 text-xs sm:text-sm font-semibold border-b-2 transition-all flex items-center gap-2 cursor-pointer shrink-0 ${
               activeTab === 'sync'
                 ? 'border-emerald-600 text-emerald-700 font-bold'
                 : 'border-transparent text-slate-500 hover:text-slate-800'
             }`}
           >
             <FileSpreadsheet className="w-4 h-4" />
-            <span>{activeLanguage === 'lo' ? 'ບັນທຶກລົງ Google Sheet' : 'Sync to Sheets'}</span>
+            <span>{activeLanguage === 'lo' ? 'Google Sheets Sync' : 'Google Sheets Sync'}</span>
+          </button>
+
+          <button
+            id="tab-sheets-direct"
+            onClick={() => setActiveTab('direct')}
+            className={`px-4 py-2.5 text-xs sm:text-sm font-semibold border-b-2 transition-all flex items-center gap-2 cursor-pointer shrink-0 ${
+              activeTab === 'direct'
+                ? 'border-emerald-600 text-emerald-700 font-bold'
+                : 'border-transparent text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <ClipboardList className="w-4 h-4" />
+            <span>{activeLanguage === 'lo' ? 'ສົ່ງອອກໂດຍກົງ (CSV / Copy)' : 'Direct Export'}</span>
           </button>
 
           <button
             id="tab-sheets-script"
             onClick={() => setActiveTab('script')}
-            className={`px-4 py-2.5 text-xs sm:text-sm font-semibold border-b-2 transition-all flex items-center gap-2 cursor-pointer ${
+            className={`px-4 py-2.5 text-xs sm:text-sm font-semibold border-b-2 transition-all flex items-center gap-2 cursor-pointer shrink-0 ${
               activeTab === 'script'
                 ? 'border-emerald-600 text-emerald-700 font-bold'
                 : 'border-transparent text-slate-500 hover:text-slate-800'
             }`}
           >
             <Code2 className="w-4 h-4" />
-            <span>{activeLanguage === 'lo' ? 'Google Apps Script (ແຈ້ງເຕືອນອັດຕະໂນມັດ)' : 'Apps Script Automation'}</span>
+            <span>{activeLanguage === 'lo' ? 'Apps Script (ແຈ້ງເຕືອນອັດຕະໂນມັດ)' : 'Apps Script'}</span>
           </button>
         </div>
 
@@ -137,24 +191,24 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
                 </div>
 
                 {!user && (
-                  <button
-                    id="btn-sheets-signin-google"
-                    onClick={onSignIn}
-                    className="gsi-material-button text-xs"
-                  >
-                    <div className="gsi-material-button-state"></div>
-                    <div className="gsi-material-button-content-wrapper">
-                      <div className="gsi-material-button-icon">
-                        <svg version="1.1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" style={{ display: 'block' }}>
-                          <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"></path>
-                          <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"></path>
-                          <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"></path>
-                          <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"></path>
-                        </svg>
-                      </div>
-                      <span className="gsi-material-button-contents">Sign in with Google</span>
-                    </div>
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      id="btn-sheets-signin-google"
+                      onClick={onSignIn}
+                      className="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-all shadow-xs cursor-pointer"
+                    >
+                      Sign in with Google
+                    </button>
+                    {onOpenAuthHelp && (
+                      <button
+                        onClick={onOpenAuthHelp}
+                        className="p-2 text-slate-400 hover:text-blue-600 rounded-lg hover:bg-slate-200/50 transition-colors"
+                        title="Help / Domain setup"
+                      >
+                        <HelpCircle className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
 
@@ -223,9 +277,112 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
                   </span>
                 </button>
                 {!user && (
-                  <p className="text-[11px] text-amber-600 text-center mt-2 font-medium">
-                    {activeLanguage === 'lo' ? '* ກະລຸນາເຂົ້າສູ່ລະບົບດ້ວຍ Google ກ່ອນເພື່ອຊິງຄ໌' : '* Please sign in with Google first'}
-                  </p>
+                  <div className="text-center mt-2 space-y-1">
+                    <p className="text-[11px] text-amber-600 font-medium">
+                      {activeLanguage === 'lo' ? '* ກະລຸນາເຂົ້າສູ່ລະບົບດ້ວຍ Google ກ່ອນເພື່ອຊິງຄ໌' : '* Please sign in with Google first'}
+                    </p>
+                    {onOpenAuthHelp && (
+                      <button
+                        onClick={onOpenAuthHelp}
+                        className="text-[11px] text-blue-600 hover:underline font-semibold"
+                      >
+                        {activeLanguage === 'lo' ? '👉 ວິທີຕັ້ງຄ່າ Authorized Domain ໃນ Firebase' : '👉 Firebase Domain Setup Guide'}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'direct' && (
+            <div className="space-y-4">
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-xs space-y-3 shadow-2xs">
+                <h4 className="font-bold text-slate-900 text-sm flex items-center gap-2">
+                  <ClipboardList className="w-4 h-4 text-blue-600" />
+                  <span>{activeLanguage === 'lo' ? 'ສົ່ງອອກໂດຍບໍ່ຕ້ອງ Sign In (100% Offline & Direct)' : 'Direct Export without Login'}</span>
+                </h4>
+                <p className="text-slate-600">
+                  {activeLanguage === 'lo'
+                    ? 'ທ່ານສາມາດກັອບປີ້ຕາຕະລາງໄປວາງໃນ Google Sheets ຫຼື ດາວໂຫຼດໄຟລ໌ CSV ໄປເປີດໃນ Excel ໄດ້ທັນທີໂດຍບໍ່ຕ້ອງລັອກອິນ.'
+                    : 'You can copy the schedule data and paste directly into Google Sheets or download a CSV file.'}
+                </p>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+                  <button
+                    id="btn-copy-table-to-sheets"
+                    onClick={handleCopyTable}
+                    className="p-3 bg-white border border-slate-300 hover:border-blue-500 rounded-xl flex items-center gap-3 transition-all shadow-2xs cursor-pointer text-left"
+                  >
+                    <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+                      {copiedTable ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
+                    </div>
+                    <div>
+                      <span className="font-bold text-slate-900 block text-xs">
+                        {copiedTable ? (activeLanguage === 'lo' ? 'ກັອບປີ້ແລ້ວ!' : 'Copied!') : (activeLanguage === 'lo' ? 'ສຳເນົາຕາຕະລາງ (Copy)' : 'Copy to Clipboard')}
+                      </span>
+                      <span className="text-[10px] text-slate-500">
+                        {activeLanguage === 'lo' ? 'ກົດແລ້ວໄປກົດ Ctrl+V ໃນ Google Sheet' : 'Paste into Google Sheet'}
+                      </span>
+                    </div>
+                  </button>
+
+                  <button
+                    id="btn-download-csv"
+                    onClick={handleDownloadCsv}
+                    className="p-3 bg-white border border-slate-300 hover:border-emerald-500 rounded-xl flex items-center gap-3 transition-all shadow-2xs cursor-pointer text-left"
+                  >
+                    <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+                      <Download className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <span className="font-bold text-slate-900 block text-xs">
+                        {activeLanguage === 'lo' ? 'ດາວໂຫຼດໄຟລ໌ CSV' : 'Download CSV File'}
+                      </span>
+                      <span className="text-[10px] text-slate-500">
+                        {activeLanguage === 'lo' ? 'ເປີດໄດ້ທັງ Excel & Google Sheets' : 'Compatible with Excel & Sheets'}
+                      </span>
+                    </div>
+                  </button>
+                </div>
+              </div>
+
+              {/* Webhook Sync Section */}
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-xs space-y-3 shadow-2xs">
+                <h4 className="font-bold text-slate-900 flex items-center gap-2">
+                  <Send className="w-4 h-4 text-emerald-600" />
+                  <span>{activeLanguage === 'lo' ? 'ຊິງຄ໌ຜ່ານ Google Apps Script Web App URL' : 'Sync via Apps Script Web App URL'}</span>
+                </h4>
+                <p className="text-slate-600">
+                  {activeLanguage === 'lo'
+                    ? 'ຖ້າທ່ານໄດ້ Deploy Apps Script ເປັນ Web App, ສາມາດວາງ URL ໃສ່ບ່ອນນີ້ເພື່ອສົ່ງຂໍ້ມູນອັດຕະໂນມັດ:'
+                    : 'If you deployed your Apps Script as a Web App, enter the Web App URL below to sync:'}
+                </p>
+
+                <div className="flex gap-2">
+                  <input
+                    type="url"
+                    value={webhookUrl}
+                    onChange={(e) => setWebhookUrl(e.target.value)}
+                    placeholder="https://script.google.com/macros/s/.../exec"
+                    className="flex-1 px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                  />
+                  <button
+                    onClick={handleWebhookSync}
+                    disabled={isWebhookSyncing || !webhookUrl.trim()}
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer shadow-xs"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isWebhookSyncing ? 'animate-spin' : ''}`} />
+                    <span>{isWebhookSyncing ? 'Syncing...' : (activeLanguage === 'lo' ? 'ສົ່ງຂໍ້ມູນ' : 'Sync')}</span>
+                  </button>
+                </div>
+
+                {webhookResult && (
+                  <div className={`p-2.5 rounded-lg text-xs font-semibold ${
+                    webhookResult.success ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'
+                  }`}>
+                    {webhookResult.message}
+                  </div>
                 )}
               </div>
             </div>
@@ -276,3 +433,4 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
     </div>
   );
 };
+

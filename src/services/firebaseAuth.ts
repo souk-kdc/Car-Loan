@@ -72,6 +72,67 @@ export const initAuth = (
   }
 };
 
+export const formatAuthError = (error: any, language: 'lo' | 'en' = 'lo'): { message: string; isDomainError: boolean; code: string } => {
+  const code = error?.code || '';
+  const domain = typeof window !== 'undefined' ? window.location.hostname : '';
+
+  if (code === 'auth/unauthorized-domain') {
+    return {
+      code,
+      isDomainError: true,
+      message: language === 'lo'
+        ? `ໂດເມນ "${domain}" ຍັງບໍ່ທັນໄດ້ຮັບອະນຸຍາດໃນ Firebase Console. (ກະລຸນາເພີ່ມ ${domain} ໃນ Firebase Auth > Settings > Authorized domains)`
+        : `Domain "${domain}" is not authorized for OAuth. Please add it to Firebase Console > Authentication > Settings > Authorized domains.`,
+    };
+  }
+
+  if (code === 'auth/popup-blocked') {
+    return {
+      code,
+      isDomainError: false,
+      message: language === 'lo'
+        ? 'ບຣາວເຊີໄດ້ບລັອກໜ້າຕ່າງ Pop-up. ກະລຸນາອະນຸຍາດ Pop-up ໃນ Browser ແລ້ວລອງໃໝ່.'
+        : 'Sign-in popup was blocked by browser. Please allow popups for this site.',
+    };
+  }
+
+  if (code === 'auth/popup-closed-by-user') {
+    return {
+      code,
+      isDomainError: false,
+      message: language === 'lo'
+        ? 'ທ່ານໄດ້ປິດໜ້າຕ່າງເຂົ້າສູ່ລະບົບກ່ອນສຳເລັດ.'
+        : 'Sign-in popup was closed before completing authentication.',
+    };
+  }
+
+  if (code === 'auth/cancelled-popup-request') {
+    return {
+      code,
+      isDomainError: false,
+      message: language === 'lo'
+        ? 'ການເຂົ້າສູ່ລະບົບຖືກຍົກເລີກ.'
+        : 'Sign-in request was cancelled.',
+    };
+  }
+
+  if (code === 'auth/network-request-failed') {
+    return {
+      code,
+      isDomainError: false,
+      message: language === 'lo'
+        ? 'ການເຊື່ອມຕໍ່ເຄືອຂ່າຍຂັດຂ້ອງ. ກະລຸນາກວດສອບອິນເຕີເນັດ.'
+        : 'Network connection failed. Please check your internet.',
+    };
+  }
+
+  return {
+    code,
+    isDomainError: false,
+    message: error?.message || (language === 'lo' ? 'ການເຂົ້າສູ່ລະບົບຂັດຂ້ອງ' : 'Sign-in failed'),
+  };
+};
+
 /**
  * Sign in with Google Popup
  */
@@ -91,8 +152,8 @@ export const signInWithGoogle = async (): Promise<{ user: User; accessToken: str
 
     cachedAccessToken = credential.accessToken;
     return { user: result.user, accessToken: cachedAccessToken };
-  } catch (error) {
-    console.error('Sign in error:', error);
+  } catch (error: any) {
+    console.error('Sign in error detail:', error);
     throw error;
   } finally {
     isSigningIn = false;
