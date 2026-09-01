@@ -29,12 +29,14 @@ import { StoreManagerModal } from './components/StoreManagerModal';
 import { SlipViewerModal } from './components/SlipViewerModal';
 import { AuthHelpModal } from './components/AuthHelpModal';
 
-import { LoanContract, Store, InstallmentItem, VehicleType, Currency } from './types';
+import { LoanContract, Store, Bank, InstallmentItem, VehicleType, Currency } from './types';
 import { 
   loadContracts, 
   saveContracts, 
   loadStores, 
   saveStores, 
+  loadBanks,
+  saveBanks,
   getSelectedContractId, 
   setSelectedContractId,
   getInitialSampleContract
@@ -46,6 +48,7 @@ import {
   recalculateAndMergeContract,
   formatCurrency
 } from './services/loanCalculator';
+import { EarlyPayoffModal } from './components/EarlyPayoffModal';
 import { 
   initAuth, 
   signInWithGoogle, 
@@ -63,6 +66,7 @@ export default function App() {
   const [contracts, setContracts] = useState<LoanContract[]>([]);
   const [selectedContractIdState, setSelectedContractIdState] = useState<string>('');
   const [stores, setStores] = useState<Store[]>([]);
+  const [banks, setBanks] = useState<Bank[]>([]);
   const [selectedStoreFilter, setSelectedStoreFilter] = useState<string>('all');
   const [activeLanguage, setActiveLanguage] = useState<'lo' | 'en'>('lo');
 
@@ -78,6 +82,7 @@ export default function App() {
   const [editingContract, setEditingContract] = useState<LoanContract | null>(null);
   const [isSheetsModalOpen, setIsSheetsModalOpen] = useState(false);
   const [isStoreManagerOpen, setIsStoreManagerOpen] = useState(false);
+  const [isEarlyPayoffModalOpen, setIsEarlyPayoffModalOpen] = useState(false);
   const [recordingPaymentItem, setRecordingPaymentItem] = useState<InstallmentItem | null>(null);
   const [viewingSlipItem, setViewingSlipItem] = useState<InstallmentItem | null>(null);
   const [deleteConfirmContract, setDeleteConfirmContract] = useState<LoanContract | null>(null);
@@ -99,8 +104,10 @@ export default function App() {
   useEffect(() => {
     const loadedContracts = loadContracts();
     const loadedStores = loadStores();
+    const loadedBanks = loadBanks();
     setContracts(loadedContracts);
     setStores(loadedStores);
+    setBanks(loadedBanks);
 
     const savedId = getSelectedContractId();
     if (savedId && loadedContracts.some((c) => c.id === savedId)) {
@@ -301,6 +308,10 @@ export default function App() {
       licensePlate?: string;
       storeName: string;
       storePhone?: string;
+      bankName?: string;
+      bankPhone?: string;
+      bankAccountNo?: string;
+      earlyPayoffRatePercent?: number;
       vehicleType: VehicleType | string;
       totalPrice: number;
       downPaymentPercent: number;
@@ -323,6 +334,19 @@ export default function App() {
       const newStoreList = [...stores, newStore];
       setStores(newStoreList);
       saveStores(newStoreList);
+    }
+
+    // Auto-save bank to list if new
+    if (params.bankName && !banks.some((b) => b.name.toLowerCase() === params.bankName!.toLowerCase())) {
+      const newBank: Bank = {
+        id: `bank_${Date.now()}`,
+        name: params.bankName,
+        phone: params.bankPhone,
+        accountNo: params.bankAccountNo,
+      };
+      const newBankList = [...banks, newBank];
+      setBanks(newBankList);
+      saveBanks(newBankList);
     }
 
     if (contractIdToUpdate) {
@@ -376,6 +400,10 @@ export default function App() {
       licensePlate: params.licensePlate,
       storeName: params.storeName,
       storePhone: params.storePhone,
+      bankName: params.bankName || 'BCEL',
+      bankPhone: params.bankPhone,
+      bankAccountNo: params.bankAccountNo,
+      earlyPayoffRatePercent: params.earlyPayoffRatePercent ?? 5.0,
       vehicleType: params.vehicleType,
       totalPrice: params.totalPrice,
       downPaymentPercent: params.downPaymentPercent,
@@ -409,6 +437,29 @@ export default function App() {
         : `Created contract for ${newContract.carName}!`,
       'success'
     );
+  };
+
+  // Handle Confirm Early Payoff (5% Fee)
+  const handleConfirmEarlyPayoff = async (settledContract: LoanContract) => {
+    const updatedContracts = contracts.map((c) => (c.id === settledContract.id ? settledContract : c));
+    updateContracts(updatedContracts);
+    setSelectedContractIdState(settledContract.id);
+
+    showToast(
+      activeLanguage === 'lo'
+        ? `🎉 ຕັດຍອດປິດສັນຍາ 5% ສຳເລັດແລ້ວ! ສັນຍາຖືກປິດສົມບູນ.`
+        : `🎉 Early payoff settlement completed successfully!`,
+      'success'
+    );
+
+    // Auto-sync to Google Sheets if connected
+    if (settledContract.spreadsheetId && accessToken) {
+      try {
+        await syncScheduleToGoogleSheet(settledContract.spreadsheetId, settledContract, accessToken);
+      } catch (e) {
+        console.warn('Auto-sync to Google Sheet failed after early payoff:', e);
+      }
+    }
   };
 
   // Delete Contract Handler with Confirmation Dialog
@@ -542,6 +593,7 @@ export default function App() {
               contract={selectedContract}
               onRecordPayment={(item) => setRecordingPaymentItem(item)}
               onEditContract={() => handleOpenEditContract(selectedContract)}
+              onOpenEarlyPayoff={() => setIsEarlyPayoffModalOpen(true)}
               activeLanguage={activeLanguage}
             />
 
@@ -552,6 +604,7 @@ export default function App() {
               onViewSlip={(item) => setViewingSlipItem(item)}
               onSyncGoogleSheets={handleSyncToSheets}
               onEditContract={() => handleOpenEditContract(selectedContract)}
+              onOpenEarlyPayoff={() => setIsEarlyPayoffModalOpen(true)}
               isSyncing={isSyncingSheets}
               activeLanguage={activeLanguage}
             />
@@ -599,7 +652,16 @@ export default function App() {
         }}
         contractToEdit={editingContract}
         stores={stores}
+        banks={banks}
         onSaveAsContract={handleSaveAsContract}
+        activeLanguage={activeLanguage}
+      />
+
+      <EarlyPayoffModal
+        isOpen={isEarlyPayoffModalOpen}
+        onClose={() => setIsEarlyPayoffModalOpen(false)}
+        contract={selectedContract || contracts[0]}
+        onConfirmPayoff={handleConfirmEarlyPayoff}
         activeLanguage={activeLanguage}
       />
 

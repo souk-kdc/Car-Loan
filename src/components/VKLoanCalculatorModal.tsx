@@ -9,31 +9,39 @@ import {
   Check, 
   FileText, 
   Sparkles, 
-  ArrowRight,
-  HelpCircle,
-  Percent,
-  Plus,
-  Edit3,
-  Save,
-  Info
+  ArrowRight, 
+  HelpCircle, 
+  Percent, 
+  Plus, 
+  Edit3, 
+  Save, 
+  Info,
+  Landmark,
+  ShieldCheck
 } from 'lucide-react';
-import { Currency, Store, VehicleType, LoanContract } from '../types';
+import { Currency, Store, Bank, VehicleType, LoanContract } from '../types';
 import { 
   calculateLoanParameters, 
   generateComparisonMatrix, 
   formatCurrency 
 } from '../services/loanCalculator';
+import { DEFAULT_BANKS } from '../services/storage';
 
 interface VKLoanCalculatorModalProps {
   isOpen: boolean;
   onClose: () => void;
   stores: Store[];
+  banks?: Bank[];
   contractToEdit?: LoanContract | null;
   onSaveAsContract: (params: {
     carName: string;
     licensePlate?: string;
     storeName: string;
     storePhone?: string;
+    bankName?: string;
+    bankPhone?: string;
+    bankAccountNo?: string;
+    earlyPayoffRatePercent?: number;
     vehicleType: VehicleType | string;
     totalPrice: number;
     downPaymentPercent: number;
@@ -51,6 +59,7 @@ export const VKLoanCalculatorModal: React.FC<VKLoanCalculatorModalProps> = ({
   isOpen,
   onClose,
   stores,
+  banks = DEFAULT_BANKS,
   contractToEdit,
   onSaveAsContract,
   activeLanguage,
@@ -68,6 +77,14 @@ export const VKLoanCalculatorModal: React.FC<VKLoanCalculatorModalProps> = ({
   const [isCustomStore, setIsCustomStore] = useState(false);
   const [storePhone, setStorePhone] = useState('020 5555 9999');
 
+  // Bank & Financing states
+  const [selectedBankPreset, setSelectedBankPreset] = useState(banks[0]?.name || 'ທະນາຄານການຄ້າຕ່າງປະເທດລາວ ມະຫາຊົນ (BCEL)');
+  const [customBankName, setCustomBankName] = useState('');
+  const [isCustomBank, setIsCustomBank] = useState(false);
+  const [bankPhone, setBankPhone] = useState('1555');
+  const [bankAccountNo, setBankAccountNo] = useState('');
+  const [earlyPayoffRatePercent, setEarlyPayoffRatePercent] = useState<number>(5);
+
   const [totalPrice, setTotalPrice] = useState<number>(21800);
   const [downPaymentPercent, setDownPaymentPercent] = useState<number>(50);
   const [monthlyInterestRatePercent, setMonthlyInterestRatePercent] = useState<number>(0.8);
@@ -75,7 +92,7 @@ export const VKLoanCalculatorModal: React.FC<VKLoanCalculatorModalProps> = ({
   const [currency, setCurrency] = useState<Currency>('USD');
   const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
   const [dueDayOfMonth, setDueDayOfMonth] = useState<number>(15);
-  const [notes, setNotes] = useState('ສັນຍາຜ່ອນລົດ ດອກເບ້ຍ 0.8%/ເດືອນ');
+  const [notes, setNotes] = useState('ສັນຍາຜ່ອນລົດ ດອກເບ້ຍ 0.8%/ເດືອນ (ຄ່າຕັດຍອດ 5%)');
   const [activeTab, setActiveTab] = useState<'calculator' | 'matrix' | 'docs'>('calculator');
   const [docCategory, setDocCategory] = useState<'individual' | 'business' | 'company'>('individual');
 
@@ -85,8 +102,9 @@ export const VKLoanCalculatorModal: React.FC<VKLoanCalculatorModalProps> = ({
       setCarName(contractToEdit.carName || '');
       setLicensePlate(contractToEdit.licensePlate || '');
       setVehicleType((contractToEdit.vehicleType as VehicleType) || 'EV car');
-      const isPreset = stores.some((s) => s.name.toLowerCase() === contractToEdit.storeName.toLowerCase());
-      if (isPreset) {
+      
+      const isStorePreset = stores.some((s) => s.name.toLowerCase() === contractToEdit.storeName.toLowerCase());
+      if (isStorePreset) {
         setSelectedStorePreset(contractToEdit.storeName);
         setIsCustomStore(false);
         setCustomStoreName('');
@@ -95,6 +113,23 @@ export const VKLoanCalculatorModal: React.FC<VKLoanCalculatorModalProps> = ({
         setCustomStoreName(contractToEdit.storeName);
       }
       setStorePhone(contractToEdit.storePhone || '');
+
+      // Bank sync
+      if (contractToEdit.bankName) {
+        const isBankPreset = banks.some((b) => b.name.toLowerCase() === (contractToEdit.bankName || '').toLowerCase());
+        if (isBankPreset) {
+          setSelectedBankPreset(contractToEdit.bankName);
+          setIsCustomBank(false);
+          setCustomBankName('');
+        } else {
+          setIsCustomBank(true);
+          setCustomBankName(contractToEdit.bankName);
+        }
+      }
+      setBankPhone(contractToEdit.bankPhone || '');
+      setBankAccountNo(contractToEdit.bankAccountNo || '');
+      setEarlyPayoffRatePercent(contractToEdit.earlyPayoffRatePercent ?? 5);
+
       setTotalPrice(contractToEdit.totalPrice);
       setDownPaymentPercent(contractToEdit.downPaymentPercent);
       setMonthlyInterestRatePercent(
@@ -113,6 +148,14 @@ export const VKLoanCalculatorModal: React.FC<VKLoanCalculatorModalProps> = ({
       setCustomStoreName('');
       setIsCustomStore(false);
       setStorePhone('020 5555 9999');
+
+      setSelectedBankPreset(banks[0]?.name || 'ທະນາຄານການຄ້າຕ່າງປະເທດລາວ ມະຫາຊົນ (BCEL)');
+      setCustomBankName('');
+      setIsCustomBank(false);
+      setBankPhone('1555');
+      setBankAccountNo('');
+      setEarlyPayoffRatePercent(5);
+
       setTotalPrice(21800);
       setDownPaymentPercent(50);
       setMonthlyInterestRatePercent(0.8);
@@ -120,11 +163,12 @@ export const VKLoanCalculatorModal: React.FC<VKLoanCalculatorModalProps> = ({
       setCurrency('USD');
       setStartDate(new Date().toISOString().split('T')[0]);
       setDueDayOfMonth(15);
-      setNotes('ສັນຍາຜ່ອນລົດ ດອກເບ້ຍ 0.8%/ເດືອນ');
+      setNotes('ສັນຍາຜ່ອນລົດ ດອກເບ້ຍ 0.8%/ເດືອນ (ຄ່າຕັດຍອດ 5%)');
     }
-  }, [contractToEdit, stores]);
+  }, [contractToEdit, stores, banks]);
 
   const effectiveStoreName = isCustomStore ? (customStoreName || 'ຮ້ານຄ້າທົ່ວໄປ') : selectedStorePreset;
+  const effectiveBankName = isCustomBank ? (customBankName || 'ທະນາຄານ') : selectedBankPreset;
 
   // Calculated single parameter output
   const calc = calculateLoanParameters(
@@ -143,6 +187,10 @@ export const VKLoanCalculatorModal: React.FC<VKLoanCalculatorModalProps> = ({
       licensePlate: licensePlate || undefined,
       storeName: effectiveStoreName,
       storePhone: storePhone || undefined,
+      bankName: effectiveBankName,
+      bankPhone: bankPhone || undefined,
+      bankAccountNo: bankAccountNo || undefined,
+      earlyPayoffRatePercent: Number(earlyPayoffRatePercent) || 5,
       vehicleType,
       totalPrice: Number(totalPrice),
       downPaymentPercent: Number(downPaymentPercent),
@@ -185,11 +233,11 @@ export const VKLoanCalculatorModal: React.FC<VKLoanCalculatorModalProps> = ({
               <p className="text-xs text-slate-500">
                 {isEditing
                   ? (activeLanguage === 'lo' 
-                      ? 'ປັບປ່ຽນຈຳນວນເດືອນຜ່ອນ, ລຸ້ນລົດ, ລາຄາ, ດອກເບ້ຍ ແລະ ເງື່ອນໄຂສັນຍາ' 
-                      : 'Update loan term (e.g. 36 to 48 months), car model, price, and terms')
+                      ? 'ປັບປ່ຽນຈຳນວນເດືອນຜ່ອນ, ລຸ້ນລົດ, ລາຄາ, ທະນາຄານ, ດອກເບ້ຍ ແລະ ເງື່ອນໄຂສັນຍາ' 
+                      : 'Update loan term (e.g. 36 to 48 months), bank, car model, price, and terms')
                   : (activeLanguage === 'lo' 
-                      ? 'ຮອງຮັບຫຼາຍໂຊຣູມ/ຮ້ານຄ້າ, ປັບແຕ່ງລາຄາ ແລະ ເບິ່ງຕາຕະລາງສົມທຽບ' 
-                      : 'Supports multiple dealerships, custom prices & comparison matrix')}
+                      ? 'ຮອງຮັບທະນາຄານລາວ, ໂຊຣູມ, ຕັດຍອດ 5% ແລະ ເບິ່ງຕາຕະລາງສົມທຽບ' 
+                      : 'Supports Lao banks, dealerships, 5% early payoff, & comparison matrix')}
               </p>
             </div>
           </div>
@@ -256,8 +304,8 @@ export const VKLoanCalculatorModal: React.FC<VKLoanCalculatorModalProps> = ({
                 </span>
                 <p className="text-[11px] text-amber-700 mt-0.5 leading-relaxed">
                   {activeLanguage === 'lo' 
-                    ? 'ທ່ານສາມາດປ່ຽນແປງຈຳນວນເດືອນຜ່ອນ (ເຊັ່ນ: 36 ເດືອນ ມາເປັນ 48 ເດືອນ), ປ່ຽນລຸ້ນລົດ, ລາຄາ, ເງິນດາວ ແລະ ອັດຕາດອກເບ້ຍໄດ້ຕາມຕ້ອງການ. ລະບົບຈະຄິດໄລ່ຕາຕະລາງຄ່າງວດໃໝ່ອັດຕະໂນມັດ ໂດຍຮັກສາປະຫວັດງວດທີ່ເຄີຍຊຳລະແລ້ວໄວ້ຄືເກົ່າ.'
-                    : 'You can modify the loan term (e.g. from 36 to 48 months), car model, price, down payment, and interest rate. The schedule will recalculate automatically while preserving paid installment history.'}
+                    ? 'ທ່ານສາມາດປ່ຽນແປງຈຳນວນເດືອນຜ່ອນ (ເຊັ່ນ: 36 ເດືອນ ມາເປັນ 48 ເດືອນ), ທະນາຄານໃຫ້ສິນເຊື່ອ, ປ່ຽນລຸ້ນລົດ, ລາຄາ, ເງິນດາວ ແລະ ອັດຕາດອກເບ້ຍໄດ້ຕາມຕ້ອງການ. ລະບົບຈະຄິດໄລ່ຕາຕະລາງຄ່າງວດໃໝ່ອັດຕະໂນມັດ ໂດຍຮັກສາປະຫວັດງວດທີ່ເຄີຍຊຳລະແລ້ວໄວ້ຄືເກົ່າ.'
+                    : 'You can modify the loan term, financing bank, car model, price, down payment, and interest rate. The schedule will recalculate automatically while preserving paid installment history.'}
                 </p>
               </div>
             </div>
@@ -268,7 +316,7 @@ export const VKLoanCalculatorModal: React.FC<VKLoanCalculatorModalProps> = ({
               {/* Left Column: Form Inputs */}
               <div className="space-y-4">
                 <h4 className="text-xs font-bold text-blue-700 uppercase tracking-wider">
-                  {activeLanguage === 'lo' ? '1. ຂໍ້ມູນລົດ ແລະ ຮ້ານຄ້າ' : '1. Vehicle & Store Info'}
+                  {activeLanguage === 'lo' ? '1. ຂໍ້ມູນລົດ, ໂຊຣູມ & ທະນາຄານ' : '1. Vehicle, Store & Bank Info'}
                 </h4>
 
                 {/* Car name & Vehicle Type */}
@@ -339,7 +387,7 @@ export const VKLoanCalculatorModal: React.FC<VKLoanCalculatorModalProps> = ({
                   </div>
                 </div>
 
-                {/* Store Selection (Supports Multiple Stores + Custom Entry) */}
+                {/* Store Selection */}
                 <div>
                   <div className="flex items-center justify-between mb-1">
                     <label className="text-xs text-slate-700 font-medium">
@@ -377,6 +425,84 @@ export const VKLoanCalculatorModal: React.FC<VKLoanCalculatorModalProps> = ({
                       ))}
                     </select>
                   )}
+                </div>
+
+                {/* Bank / Lending Institution Selection */}
+                <div className="pt-1">
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs text-slate-700 font-bold flex items-center gap-1.5">
+                      <Landmark className="w-3.5 h-3.5 text-blue-600" />
+                      <span>{activeLanguage === 'lo' ? 'ທະນາຄານທີ່ໃຫ້ສິນເຊື່ອ' : 'Financing Bank / Lender'}</span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setIsCustomBank(!isCustomBank)}
+                      className="text-[11px] font-semibold text-blue-600 hover:text-blue-700 underline cursor-pointer"
+                    >
+                      {isCustomBank ? (activeLanguage === 'lo' ? 'ເລືອກຈາກລາຍຊື່ທະນາຄານ' : 'Pick from bank list') : (activeLanguage === 'lo' ? '+ ພິມຊື່ທະນາຄານເອງ' : '+ Type custom bank')}
+                    </button>
+                  </div>
+
+                  {isCustomBank ? (
+                    <input
+                      id="input-calc-custom-bank"
+                      type="text"
+                      value={customBankName}
+                      onChange={(e) => setCustomBankName(e.target.value)}
+                      placeholder={activeLanguage === 'lo' ? 'ພິມຊື່ທະນາຄານ ຫຼື ສະຖາບັນການເງິນ...' : 'Enter bank name...'}
+                      className="w-full bg-slate-50 border border-blue-400 rounded-lg px-3 py-2 text-xs text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 shadow-2xs"
+                    />
+                  ) : (
+                    <select
+                      id="select-calc-bank"
+                      value={selectedBankPreset}
+                      onChange={(e) => setSelectedBankPreset(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-900 font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 shadow-2xs"
+                    >
+                      {banks.map((b) => (
+                        <option key={b.id} value={b.name}>
+                          {b.name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+
+                {/* Bank Account Number & Early Payoff Rate % */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-slate-700 font-medium mb-1">
+                      {activeLanguage === 'lo' ? 'ເລກບັນຊີທະນາຄານ (ຖ້າມີ)' : 'Bank Account No.'}
+                    </label>
+                    <input
+                      id="input-calc-bank-account"
+                      type="text"
+                      value={bankAccountNo}
+                      onChange={(e) => setBankAccountNo(e.target.value)}
+                      placeholder="e.g. 010-12-00-00123456-001"
+                      className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 shadow-2xs"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs text-slate-700 font-medium mb-1 flex items-center justify-between">
+                      <span>{activeLanguage === 'lo' ? 'ຄ່າຕັດຍອດປິດສັນຍາ' : 'Early Payoff Fee'}</span>
+                      <span className="text-[10px] text-emerald-700 font-bold">{earlyPayoffRatePercent}%</span>
+                    </label>
+                    <div className="relative">
+                      <input
+                        id="input-calc-payoff-rate"
+                        type="number"
+                        min="0"
+                        max="20"
+                        step="0.5"
+                        value={earlyPayoffRatePercent}
+                        onChange={(e) => setEarlyPayoffRatePercent(Number(e.target.value))}
+                        className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-900 font-bold focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 shadow-2xs"
+                      />
+                      <span className="absolute right-3 top-2 text-xs text-slate-400 font-bold">%</span>
+                    </div>
+                  </div>
                 </div>
 
                 <div className="pt-2">
@@ -551,7 +677,7 @@ export const VKLoanCalculatorModal: React.FC<VKLoanCalculatorModalProps> = ({
                     type="text"
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
-                    placeholder="e.g. ດອກເບ້ຍ 0.8%/ເດືອນ, ໂປຣໂມຊັ່ນປະກັນໄພຟຣີ 1 ປີ"
+                    placeholder="e.g. ດອກເບ້ຍ 0.8%/ເດືອນ, ຄ່າຕັດຍອດ 5%"
                     className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 shadow-2xs"
                   />
                 </div>
@@ -562,10 +688,10 @@ export const VKLoanCalculatorModal: React.FC<VKLoanCalculatorModalProps> = ({
                 <div>
                   <div className="flex items-center justify-between pb-3 border-b border-slate-200">
                     <span className="text-xs font-bold text-slate-600 uppercase tracking-wider">
-                      {activeLanguage === 'lo' ? 'ຜົນການຄິດໄລ່ຄ່າງວດໃໝ່' : 'Calculation Summary'}
+                      {activeLanguage === 'lo' ? 'ຜົນການຄິດໄລ່ຄ່າງວດ' : 'Calculation Summary'}
                     </span>
-                    <span className="text-xs px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 font-semibold border border-blue-200">
-                      {effectiveStoreName}
+                    <span className="text-xs px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 font-semibold border border-blue-200 truncate max-w-[160px]">
+                      {effectiveBankName}
                     </span>
                   </div>
 
@@ -584,6 +710,16 @@ export const VKLoanCalculatorModal: React.FC<VKLoanCalculatorModalProps> = ({
 
                   {/* Breakdown details */}
                   <div className="space-y-2.5 text-xs">
+                    <div className="flex justify-between py-1 border-b border-slate-200">
+                      <span className="text-slate-600">{activeLanguage === 'lo' ? 'ທະນາຄານໃຫ້ສິນເຊື່ອ:' : 'Financing Bank:'}</span>
+                      <span className="font-semibold text-slate-900 truncate max-w-[180px] text-right">{effectiveBankName}</span>
+                    </div>
+
+                    <div className="flex justify-between py-1 border-b border-slate-200">
+                      <span className="text-slate-600">{activeLanguage === 'lo' ? 'ໂຊຣູມ / ຮ້ານຄ້າ:' : 'Dealership:'}</span>
+                      <span className="font-semibold text-slate-900">{effectiveStoreName}</span>
+                    </div>
+
                     <div className="flex justify-between py-1 border-b border-slate-200">
                       <span className="text-slate-600">{activeLanguage === 'lo' ? 'ລາຄາລົດລວມ:' : 'Total Price:'}</span>
                       <span className="font-semibold text-slate-900">{formatCurrency(calc.totalPrice, currency)}</span>
@@ -616,6 +752,14 @@ export const VKLoanCalculatorModal: React.FC<VKLoanCalculatorModalProps> = ({
                     <div className="flex justify-between py-1 border-b border-slate-200">
                       <span className="text-slate-600">{activeLanguage === 'lo' ? 'ດອກເບ້ຍລວມທັງໝົດ:' : 'Total Cumulative Interest:'}</span>
                       <span className="font-semibold text-emerald-600">{formatCurrency(calc.totalInterest, currency)}</span>
+                    </div>
+
+                    {/* Early Payoff preview */}
+                    <div className="flex justify-between py-1.5 bg-emerald-50/70 px-2.5 rounded-lg border border-emerald-200 text-emerald-900">
+                      <span className="font-medium">{activeLanguage === 'lo' ? `ຄ່າຕັດຍອດປິດສັນຍາ (${earlyPayoffRatePercent}%):` : `Early Payoff Fee (${earlyPayoffRatePercent}%):`}</span>
+                      <span className="font-bold">
+                        {formatCurrency(Math.round((calc.loanAmount * (earlyPayoffRatePercent / 100)) * 100) / 100, currency)}
+                      </span>
                     </div>
 
                     <div className="flex justify-between py-2 bg-white px-3 rounded-lg border border-slate-200 font-bold shadow-2xs">

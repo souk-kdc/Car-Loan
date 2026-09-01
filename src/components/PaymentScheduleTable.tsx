@@ -13,7 +13,8 @@ import {
   FileCheck2,
   Calendar,
   Check,
-  Edit3
+  Edit3,
+  ShieldCheck
 } from 'lucide-react';
 import { LoanContract, InstallmentItem, PaymentStatus } from '../types';
 import { formatCurrency, formatDateLao, getDaysRemaining } from '../services/loanCalculator';
@@ -24,6 +25,7 @@ interface PaymentScheduleTableProps {
   onViewSlip: (item: InstallmentItem) => void;
   onSyncGoogleSheets: () => void;
   onEditContract?: () => void;
+  onOpenEarlyPayoff?: () => void;
   isSyncing: boolean;
   activeLanguage: 'lo' | 'en';
 }
@@ -34,6 +36,7 @@ export const PaymentScheduleTable: React.FC<PaymentScheduleTableProps> = ({
   onViewSlip,
   onSyncGoogleSheets,
   onEditContract,
+  onOpenEarlyPayoff,
   isSyncing,
   activeLanguage,
 }) => {
@@ -54,6 +57,13 @@ export const PaymentScheduleTable: React.FC<PaymentScheduleTableProps> = ({
 
   const getStatusBadge = (item: InstallmentItem) => {
     switch (item.status) {
+      case 'settled':
+        return (
+          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-teal-50 text-teal-800 border border-teal-300 shadow-2xs">
+            <ShieldCheck className="w-3 h-3 text-teal-600" />
+            <span>{activeLanguage === 'lo' ? 'ຕັດຍອດແລ້ວ' : 'Settled'}</span>
+          </span>
+        );
       case 'paid':
         return (
           <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-2xs">
@@ -105,7 +115,19 @@ export const PaymentScheduleTable: React.FC<PaymentScheduleTableProps> = ({
         </div>
 
         {/* Action Buttons */}
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {onOpenEarlyPayoff && (
+            <button
+              id="btn-early-payoff-table-head"
+              onClick={onOpenEarlyPayoff}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-2xs transition-all cursor-pointer"
+              title="Early Payoff 5%"
+            >
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+              <span>{activeLanguage === 'lo' ? 'ຕັດຍອດປິດສັນຍາ (5%)' : 'Early Payoff (5%)'}</span>
+            </button>
+          )}
+
           {onEditContract && (
             <button
               id="btn-edit-contract-table"

@@ -1,4 +1,4 @@
-import { Currency, InstallmentItem, LoanContract, PaymentStatus, VehicleType } from '../types';
+import { Currency, InstallmentItem, LoanContract, PaymentStatus, VehicleType, EarlyPayoffCalculation } from '../types';
 
 export interface CalculationMatrixRow {
   downPercent: number; // 50, 60, 70, 80
@@ -194,6 +194,10 @@ export function recalculateAndMergeContract(
     licensePlate?: string;
     storeName: string;
     storePhone?: string;
+    bankName?: string;
+    bankPhone?: string;
+    bankAccountNo?: string;
+    earlyPayoffRatePercent?: number;
     vehicleType: VehicleType | string;
     totalPrice: number;
     downPaymentPercent: number;
@@ -225,10 +229,10 @@ export function recalculateAndMergeContract(
   const existingSchedule = existingContract.schedule || [];
   const mergedSchedule: InstallmentItem[] = rawNewSchedule.map((newItem) => {
     const prevItem = existingSchedule.find((p) => p.period === newItem.period);
-    if (prevItem && prevItem.status === 'paid') {
+    if (prevItem && (prevItem.status === 'paid' || prevItem.status === 'settled')) {
       return {
         ...newItem,
-        status: 'paid',
+        status: prevItem.status,
         paidDate: prevItem.paidDate,
         paidAmount: prevItem.paidAmount,
         paymentMethod: prevItem.paymentMethod,
@@ -247,6 +251,10 @@ export function recalculateAndMergeContract(
     licensePlate: newParams.licensePlate,
     storeName: newParams.storeName,
     storePhone: newParams.storePhone,
+    bankName: newParams.bankName,
+    bankPhone: newParams.bankPhone,
+    bankAccountNo: newParams.bankAccountNo,
+    earlyPayoffRatePercent: newParams.earlyPayoffRatePercent ?? existingContract.earlyPayoffRatePercent ?? 5,
     vehicleType: newParams.vehicleType,
     totalPrice: calc.totalPrice,
     downPaymentPercent: calc.downPaymentPercent,
@@ -275,7 +283,7 @@ export function getContractStats(contract: LoanContract) {
   const schedule = contract.schedule || [];
   const totalInstallments = schedule.length;
   
-  const paidItems = schedule.filter((item) => item.status === 'paid');
+  const paidItems = schedule.filter((item) => item.status === 'paid' || item.status === 'settled');
   const paidCount = paidItems.length;
   const remainingCount = totalInstallments - paidCount;
 
@@ -290,8 +298,8 @@ export function getContractStats(contract: LoanContract) {
   const overdueItems = schedule.filter((item) => item.status === 'overdue');
   const dueSoonItems = schedule.filter((item) => item.status === 'due_soon');
 
-  // Next upcoming payment
-  const upcomingItem = schedule.find((item) => item.status !== 'paid');
+  // Next upcoming payment (first item that is not paid or settled)
+  const upcomingItem = schedule.find((item) => item.status !== 'paid' && item.status !== 'settled');
 
   const progressPercent = totalInstallments > 0 ? Math.round((paidCount / totalInstallments) * 100) : 0;
   const principalProgressPercent = contract.loanAmount > 0 
@@ -314,6 +322,85 @@ export function getContractStats(contract: LoanContract) {
     upcomingItem,
     progressPercent,
     principalProgressPercent,
+    isFullySettled: contract.isFullySettled || (remainingCount === 0 && totalInstallments > 0),
+  };
+}
+
+/**
+ * Calculates Early Payoff (ການຕັດຍອດປິດສັນຍາ)
+ * When paying off early, calculate:
+ * - remainingPrincipal: unpaid principal balance
+ * - payoffFeeRatePercent: default 5%
+ * - payoffFeeAmount: remainingPrincipal * (payoffFeeRatePercent / 100)
+ * - totalPayoffAmount: remainingPrincipal + payoffFeeAmount
+ * - remainingFutureInterest: total future interest that the customer will save by paying off early
+ * - regularTotalRemaining: remainingPrincipal + remainingFutureInterest
+ * - netSavings: remainingFutureInterest - payoffFeeAmount (money saved compared to paying all monthly installments to the end)
+ */
+export function calculateEarlyPayoff(
+  contract: LoanContract,
+  customPayoffRatePercent?: number,
+  targetPeriod?: number
+): EarlyPayoffCalculation & {
+  regularTotalRemaining: number;
+  netSavings: number;
+  targetDueDate: string;
+} {
+  const schedule = contract.schedule || [];
+  const payoffRate = customPayoffRatePercent ?? contract.earlyPayoffRatePercent ?? 5;
+
+  let unpaidItems: InstallmentItem[] = [];
+  let currentPeriod = 1;
+  let targetDueDate = new Date().toISOString().split('T')[0];
+
+  if (targetPeriod !== undefined) {
+    // Simulated payoff at specific period target
+    unpaidItems = schedule.filter((item) => item.period >= targetPeriod);
+    const targetItem = schedule.find((item) => item.period === targetPeriod);
+    if (targetItem) {
+      targetDueDate = targetItem.dueDate;
+      currentPeriod = targetItem.period;
+    }
+  } else {
+    // Actual remaining unpaid items
+    unpaidItems = schedule.filter((item) => item.status !== 'paid' && item.status !== 'settled');
+    const firstUnpaid = unpaidItems[0];
+    if (firstUnpaid) {
+      targetDueDate = firstUnpaid.dueDate;
+      currentPeriod = firstUnpaid.period;
+    }
+  }
+
+  // Calculate total unpaid principal and future interest
+  const remainingPrincipal = unpaidItems.reduce((acc, item) => acc + item.principalAmount, 0);
+  const remainingFutureInterest = unpaidItems.reduce((acc, item) => acc + item.interestAmount, 0);
+
+  // Payoff fee amount = remainingPrincipal * 5%
+  const payoffFeeAmount = Math.round((remainingPrincipal * (payoffRate / 100)) * 100) / 100;
+  
+  // Total payoff amount to close contract = remainingPrincipal + payoffFeeAmount
+  const totalPayoffAmount = Math.round((remainingPrincipal + payoffFeeAmount) * 100) / 100;
+
+  // Regular total remaining if paid month-by-month
+  const regularTotalRemaining = Math.round((remainingPrincipal + remainingFutureInterest) * 100) / 100;
+
+  // Net savings = future interest that won't be paid minus 5% fee
+  const netSavings = Math.round((remainingFutureInterest - payoffFeeAmount) * 100) / 100;
+
+  const paidInstallmentsCount = schedule.length - unpaidItems.length;
+
+  return {
+    remainingPrincipal: Math.round(remainingPrincipal * 100) / 100,
+    payoffFeeRatePercent: payoffRate,
+    payoffFeeAmount,
+    totalPayoffAmount,
+    remainingFutureInterest: Math.round(remainingFutureInterest * 100) / 100,
+    paidInstallmentsCount,
+    remainingInstallmentsCount: unpaidItems.length,
+    currentPeriod,
+    regularTotalRemaining,
+    netSavings,
+    targetDueDate,
   };
 }
 

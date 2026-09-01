@@ -10,7 +10,18 @@ export interface Store {
   color?: string;
 }
 
-export type PaymentStatus = 'paid' | 'due_soon' | 'overdue' | 'pending';
+export interface Bank {
+  id: string;
+  name: string;
+  nameEn?: string;
+  shortName?: string;
+  logo?: string;
+  color?: string;
+  phone?: string;
+  accountNo?: string;
+}
+
+export type PaymentStatus = 'paid' | 'due_soon' | 'overdue' | 'pending' | 'settled';
 
 export interface InstallmentItem {
   period: number; // 1, 2, 3...
@@ -28,12 +39,27 @@ export interface InstallmentItem {
   slipImage?: string; // Base64 data URL
 }
 
+export interface EarlyPayoffCalculation {
+  remainingPrincipal: number; // ຍອດເງິນຕົ້ນຍັງເຫຼືອ
+  payoffFeeRatePercent: number; // 5%
+  payoffFeeAmount: number; // ຄ່າຕັດຍອດ 5%
+  totalPayoffAmount: number; // ຍອດເງິນລວມທີ່ຕ້ອງຈ່າຍຕັດຍອດ
+  remainingFutureInterest: number; // ດອກເບ້ຍໃນອະນາຄົດທີ່ປະຢັດໄດ້
+  paidInstallmentsCount: number; // ຈຳນວນງວດທີ່ຈ່າຍແລ້ວ
+  remainingInstallmentsCount: number; // ຈຳນວນງວດທີ່ເຫຼືອ
+  currentPeriod: number;
+}
+
 export interface LoanContract {
   id: string;
   carName: string; // e.g. 'BYD Atto 3 EV', 'Neta V', 'Toyota Hilux'
   licensePlate?: string;
   storeName: string; // Dealership / Showroom name e.g. 'VK group showroom' or custom
   storePhone?: string;
+  bankName?: string; // Lender / Financing Bank (ທະນາຄານທີ່ໃຫ້ສິນເຊື່ອ e.g. 'ທະນາຄານການຄ້າຕ່າງປະເທດລາວ (BCEL)')
+  bankPhone?: string;
+  bankAccountNo?: string;
+  earlyPayoffRatePercent?: number; // Default 5%
   vehicleType: VehicleType | string;
   totalPrice: number; // Total Car Price (ລາຄາລວມ)
   downPaymentPercent: number; // % Down payment e.g. 50, 60, 70, 80
@@ -50,6 +76,9 @@ export interface LoanContract {
   dueDayOfMonth: number; // Day of month payment is due e.g. 15
   currency: Currency;
   notes?: string;
+  isFullySettled?: boolean;
+  settledDate?: string;
+  settledAmount?: number;
   schedule: InstallmentItem[];
   spreadsheetId?: string;
   spreadsheetUrl?: string;

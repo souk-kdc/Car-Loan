@@ -12,15 +12,18 @@ import {
   ShieldCheck,
   Percent,
   Receipt,
-  Edit3
+  Edit3,
+  Landmark,
+  Sparkles
 } from 'lucide-react';
 import { LoanContract, InstallmentItem } from '../types';
-import { formatCurrency, formatDateLao, getContractStats, getDaysRemaining } from '../services/loanCalculator';
+import { formatCurrency, formatDateLao, getContractStats, getDaysRemaining, calculateEarlyPayoff } from '../services/loanCalculator';
 
 interface DashboardStatsProps {
   contract: LoanContract;
   onRecordPayment: (item: InstallmentItem) => void;
   onEditContract?: () => void;
+  onOpenEarlyPayoff?: () => void;
   activeLanguage: 'lo' | 'en';
 }
 
@@ -28,11 +31,13 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({
   contract,
   onRecordPayment,
   onEditContract,
+  onOpenEarlyPayoff,
   activeLanguage,
 }) => {
   const stats = getContractStats(contract);
   const upcoming = stats.upcomingItem;
   const daysInfo = upcoming ? getDaysRemaining(upcoming.dueDate) : null;
+  const earlyPayoff = calculateEarlyPayoff(contract);
 
   return (
     <div className="space-y-4">
@@ -69,7 +74,7 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({
         </div>
       )}
 
-      {stats.overdueCount === 0 && stats.dueSoonCount > 0 && upcoming && daysInfo && (
+      {stats.overdueCount === 0 && stats.dueSoonCount > 0 && upcoming && daysInfo && !contract.isFullySettled && (
         <div className="bg-amber-50 border-l-4 border-amber-500 border border-amber-200 p-4 rounded-xl flex flex-wrap items-center justify-between gap-3 shadow-2xs">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-600 flex items-center justify-center flex-shrink-0">
@@ -99,7 +104,7 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({
         </div>
       )}
 
-      {/* Contract & Dealership Summary Pill */}
+      {/* Contract & Financing Bank Summary Pill */}
       <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 text-slate-900 shadow-xs">
         <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-slate-100">
           <div className="flex items-center gap-3">
@@ -107,7 +112,7 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({
               <Car className="w-7 h-7" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <h3 className="text-lg font-bold text-slate-900">{contract.carName}</h3>
                 {contract.licensePlate && (
                   <span className="text-xs px-2 py-0.5 rounded bg-slate-100 border border-slate-200 text-slate-700 font-mono font-semibold">
@@ -117,6 +122,14 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({
                 <span className="text-xs px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-100 font-medium">
                   {contract.vehicleType}
                 </span>
+
+                {contract.isFullySettled ? (
+                  <span className="text-xs px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>{activeLanguage === 'lo' ? 'ຕັດຍອດປິດສັນຍາແລ້ວ' : 'Fully Settled'}</span>
+                  </span>
+                ) : null}
+
                 {onEditContract && (
                   <button
                     id="btn-edit-contract-dashboard"
@@ -129,11 +142,24 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({
                   </button>
                 )}
               </div>
-              <p className="text-xs text-slate-500 flex items-center gap-1.5 mt-0.5">
-                <Store className="w-3.5 h-3.5 text-blue-600" />
-                <span className="font-medium text-slate-700">{contract.storeName}</span>
-                {contract.storePhone && <span>• ໂທ: {contract.storePhone}</span>}
-              </p>
+
+              {/* Lending Bank & Store Details */}
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500 mt-1">
+                <span className="flex items-center gap-1 font-semibold text-slate-800">
+                  <Landmark className="w-3.5 h-3.5 text-blue-600" />
+                  <span>{activeLanguage === 'lo' ? 'ທະນາຄານ:' : 'Bank:'} {contract.bankName || 'BCEL'}</span>
+                  {contract.bankAccountNo && <span className="font-mono text-slate-600 font-normal">({contract.bankAccountNo})</span>}
+                  {contract.bankPhone && <span className="text-slate-500 font-normal">| ໂທ: {contract.bankPhone}</span>}
+                </span>
+
+                <span className="text-slate-300">•</span>
+
+                <span className="flex items-center gap-1 text-slate-600">
+                  <Store className="w-3.5 h-3.5 text-blue-600" />
+                  <span className="font-medium text-slate-700">{contract.storeName}</span>
+                  {contract.storePhone && <span>| ໂທ: {contract.storePhone}</span>}
+                </span>
+              </div>
             </div>
           </div>
 
@@ -161,6 +187,49 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({
               </span>
             </div>
           </div>
+        </div>
+
+        {/* Early Payoff / 5% Settlement Bar */}
+        <div className="mt-4 p-3 bg-gradient-to-r from-emerald-50/90 to-teal-50/70 border border-emerald-200 rounded-xl flex flex-wrap items-center justify-between gap-3 text-xs">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center flex-shrink-0">
+              <ShieldCheck className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-emerald-950">
+                  {activeLanguage === 'lo' ? 'ການຕັດຍອດປິດສັນຍາ (Early Payoff 5%):' : 'Early Payoff Option (5% Fee):'}
+                </span>
+                <span className="px-2 py-0.5 rounded bg-emerald-200/80 text-emerald-900 font-extrabold text-[11px]">
+                  {contract.isFullySettled 
+                    ? (activeLanguage === 'lo' ? 'ປິດສັນຍາແລ້ວ' : 'Settled')
+                    : formatCurrency(earlyPayoff.totalPayoffAmount, contract.currency)}
+                </span>
+              </div>
+              <p className="text-[11px] text-emerald-800 mt-0.5">
+                {contract.isFullySettled
+                  ? (activeLanguage === 'lo' ? `ສັນຍານີ້ຕັດຍອດປິດແລ້ວເມື່ອ ${formatDateLao(contract.settledDate || '')}` : `Settled on ${contract.settledDate}`)
+                  : (activeLanguage === 'lo' 
+                      ? `ເງິນຕົ້ນຍັງເຫຼືອ ${formatCurrency(earlyPayoff.remainingPrincipal, contract.currency)} + ຄ່າຕັດຍອດ 5% (${formatCurrency(earlyPayoff.payoffFeeAmount, contract.currency)}) • ປະຢັດດອກເບ້ຍໄດ້ ${formatCurrency(earlyPayoff.netSavings, contract.currency)}!` 
+                      : `Principal ${formatCurrency(earlyPayoff.remainingPrincipal, contract.currency)} + 5% Fee (${formatCurrency(earlyPayoff.payoffFeeAmount, contract.currency)}) • Saves ${formatCurrency(earlyPayoff.netSavings, contract.currency)}!`)}
+              </p>
+            </div>
+          </div>
+
+          {onOpenEarlyPayoff && (
+            <button
+              id="btn-open-early-payoff-stats"
+              onClick={onOpenEarlyPayoff}
+              className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs transition-all active:scale-95 flex items-center gap-1.5 cursor-pointer ml-auto"
+            >
+              <Receipt className="w-3.5 h-3.5" />
+              <span>
+                {contract.isFullySettled
+                  ? (activeLanguage === 'lo' ? 'ເບິ່ງໃບຢັ້ງຢືນການຕັດຍອດ' : 'View Payoff Certificate')
+                  : (activeLanguage === 'lo' ? 'ຄິດໄລ່ & ຕັດຍອດປິດສັນຍາ' : 'Calculate & Settle (5%)')}
+              </span>
+            </button>
+          )}
         </div>
 
         {/* 4 Stat Cards */}
